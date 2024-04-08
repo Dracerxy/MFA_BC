@@ -1,16 +1,16 @@
 const express = require("express");
 const ContractRoutes = express.Router();
 const { Web3 } = require('web3');
-const { ethers } = require('ethers');
-const User = require('../schema/UserDataSchema');
-
+const { ethers, errors } = require('ethers');
+const generateWallet=require('../wallet/wallet_utils')
 const infuraApiKey = 'd9b9137d0f3a498bbd9561ed4c65237b';
 const provider = new ethers.providers.InfuraProvider('sepolia', infuraApiKey);
 const selkadiaEndpoint = `https://sepolia.infura.io/v3/${infuraApiKey}`;
 const web3 = new Web3(new Web3.providers.HttpProvider(selkadiaEndpoint));
+const relayerprivateKey = '0xc52796f8cc4819dc9a0ea264985c8acf6d73f1ee1a2fb2db2656dba4034af983'; 
+const relayerAddress = '0x3A83b78581c682813fd206af7fFD8c90d7ae81bE';
 
-
-const contractAddress = '0xf5531B5106b693158953f36AF85f5B9051Ad0F5f';
+const contractAddress = '0x9CB1993B6D84BADF715fd0368c5e6194784eaF8A';
 const contractABI =[
 	{
 		"inputs": [],
@@ -97,7 +97,13 @@ const contractABI =[
 		"type": "event"
 	},
 	{
-		"inputs": [],
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
 		"name": "registerUserWithWallet",
 		"outputs": [],
 		"stateMutability": "nonpayable",
@@ -124,6 +130,11 @@ const contractABI =[
 	},
 	{
 		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
 			{
 				"internalType": "bytes32",
 				"name": "transactionId",
@@ -179,6 +190,19 @@ const contractABI =[
 		"type": "function"
 	},
 	{
+		"inputs": [],
+		"name": "relayer",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
 		"inputs": [
 			{
 				"internalType": "address",
@@ -208,36 +232,27 @@ ContractRoutes.get("/home", (req, res) => {
 ContractRoutes.post("/initiateMFA", async (req, res) => {
     try {
         // Retrieve user data from the database
-        const userData = await User.findOne({ email: req.body.email });
-
-        if (!userData) {
-            return res.status(404).json({ message: "User not found" });
-        }
-
+		const { address, dapp_address } = req.body;
         // Check if the user is already registered on the blockchain
-		const isRegistered = await contractweb3.methods.isRegistered(userData.wallet_address).call({ from: userData.wallet_address });
+		const isRegistered = await contractweb3.methods.isRegistered(address).call({ from: address });
 
         if (!isRegistered) {
-			const gas = await contractweb3.methods.registerUserWithWallet().estimateGas({ from: userData.wallet_address });
-            const gasPrice = await web3.eth.getGasPrice();
-
             // Build the transaction
-            const transactionObject = contractweb3.methods.registerUserWithWallet();
+			const txNonce = await web3.eth.getTransactionCount(relayerAddress);
+			const transactionObject = contractweb3.methods.registerUserWithWallet(address);
             const transactionData = transactionObject.encodeABI();
-            const nonce = await web3.eth.getTransactionCount(userData.wallet_address);
-
+			const gas =await contractweb3.methods.registerUserWithWallet(address).estimateGas({ from: relayerAddress });
+            const gasPrice = await web3.eth.getGasPrice();
             const rawTransaction = {
-                from: userData.wallet_address,
+                from: relayerAddress,
                 to: contractAddress,
                 gas,
                 gasPrice,
                 data: transactionData,
-                nonce,
+                nonce:txNonce,
             };
-
             // Sign the transaction
-            const signedTransaction = await web3.eth.accounts.signTransaction(rawTransaction,userData.private_key);
-            
+            const signedTransaction = await web3.eth.accounts.signTransaction(rawTransaction,relayerprivateKey);
             // Send the signed transaction
             const transactionReceipt = await web3.eth.sendSignedTransaction(signedTransaction.rawTransaction);
 			console.log("User registered on the blockchain");
@@ -246,17 +261,17 @@ ContractRoutes.post("/initiateMFA", async (req, res) => {
 			console.log("already registered!!!!");
 		}
 
-        // Initiate MFA for the user
-		const gas = await contractweb3.methods.initiateMFA(userData.dapp_address).estimateGas({ from: userData.wallet_address });
+        // // Initiate MFA for the user
+		const gas = await contractweb3.methods.initiateMFA(dapp_address).estimateGas({ from: relayerAddress });
 		const gasPrice = await web3.eth.getGasPrice();
 		
 		// Build the transaction
-		const transactionObject = contractweb3.methods.initiateMFA(userData.dapp_address);
+		const transactionObject = contractweb3.methods.initiateMFA(dapp_address);
 		const transactionData = transactionObject.encodeABI();
-		const nonce = await web3.eth.getTransactionCount(userData.wallet_address);
+		const nonce = await web3.eth.getTransactionCount(relayerAddress);
 		
 		const rawTransaction = {
-			from: userData.wallet_address,
+			from:relayerAddress,
 			to: contractAddress,
 			gas,
 			gasPrice,
@@ -265,7 +280,7 @@ ContractRoutes.post("/initiateMFA", async (req, res) => {
 		};
 		
 		// Sign the transaction
-		const signedTransaction = await web3.eth.accounts.signTransaction(rawTransaction, userData.private_key);
+		const signedTransaction = await web3.eth.accounts.signTransaction(rawTransaction, relayerprivateKey);
 		
 		// Send the signed transaction
 		const transactionReceipt = await web3.eth.sendSignedTransaction(signedTransaction.rawTransaction);
@@ -284,9 +299,20 @@ ContractRoutes.post("/initiateMFA", async (req, res) => {
         });
     } catch (error) {
         console.error("Error:", error);
-        return res.status(500).json({ message: "Internal server error" });
+        return res.status(500).json({ message: "Internal server error"+error });
     }
 });
+
+ContractRoutes.get("/get-wallet", async(req, res) => {
+	try{
+	const newWallet = await generateWallet();
+	const newAddress = newWallet.address;
+	const newPrivateKey = newWallet.privateKey;
+    return res.status(200).json({address:newAddress,key:newPrivateKey});
+}catch(error){
+	console.error("Error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+}});
 
 
 module.exports = ContractRoutes;

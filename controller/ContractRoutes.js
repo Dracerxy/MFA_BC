@@ -10,7 +10,7 @@ const web3 = new Web3(new Web3.providers.HttpProvider(selkadiaEndpoint));
 const relayerprivateKey = '0xc52796f8cc4819dc9a0ea264985c8acf6d73f1ee1a2fb2db2656dba4034af983'; 
 const relayerAddress = '0x3A83b78581c682813fd206af7fFD8c90d7ae81bE';
 
-const contractAddress = '0x9CB1993B6D84BADF715fd0368c5e6194784eaF8A';
+const contractAddress = '0xBdF3eA27fC353f85C88BE5c6878843Ac186a5149';
 const contractABI =[
 	{
 		"inputs": [],
@@ -41,6 +41,11 @@ const contractABI =[
 	},
 	{
 		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
 			{
 				"internalType": "address",
 				"name": "dappAddress",
@@ -262,11 +267,11 @@ ContractRoutes.post("/initiateMFA", async (req, res) => {
 		}
 
         // // Initiate MFA for the user
-		const gas = await contractweb3.methods.initiateMFA(dapp_address).estimateGas({ from: relayerAddress });
+		const gas = await contractweb3.methods.initiateMFA(address,dapp_address).estimateGas({ from: relayerAddress });
 		const gasPrice = await web3.eth.getGasPrice();
 		
 		// Build the transaction
-		const transactionObject = contractweb3.methods.initiateMFA(dapp_address);
+		const transactionObject = contractweb3.methods.initiateMFA(address,dapp_address);
 		const transactionData = transactionObject.encodeABI();
 		const nonce = await web3.eth.getTransactionCount(relayerAddress);
 		

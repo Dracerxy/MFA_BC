@@ -227,7 +227,6 @@ const contractABI =[
 		"type": "function"
 	}
 ];
-
 const contract = new ethers.Contract(contractAddress, contractABI, provider);
 const contractweb3 = new web3.eth.Contract(contractABI, contractAddress);
 
